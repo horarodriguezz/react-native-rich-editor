@@ -61,4 +61,16 @@ export class EditorState {
   public getText(): string {
     return this.blocks.map((block) => block.text).join("");
   }
+
+  public getBlockAfter(block: RichBlock): RichBlock | undefined {
+    const index = this.blocks.indexOf(block);
+
+    return this.blocks[index + 1];
+  }
+
+  public getBlockBefore(block: RichBlock): RichBlock | undefined {
+    const index = this.blocks.indexOf(block);
+
+    return this.blocks[index - 1];
+  }
 }

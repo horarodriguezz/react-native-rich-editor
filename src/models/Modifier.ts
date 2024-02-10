@@ -1,7 +1,6 @@
 import getIsInRange from "../utils/getIsInRange";
 import getTextDifference from "../utils/getTextDifference";
 import { BlockMutabilityType, RichBlock } from "./Block";
-import { EditorChange } from "./ChangeType";
 import { EditorState } from "./EditorState";
 import { Style } from "./InlineStyle";
 import { Selection } from "./Selection";
@@ -46,17 +45,7 @@ export class Modifier {
       addedText +
       selectedBlock.text.slice(from);
 
-    const newRanges = selectedBlock.inlineStyleRanges.map((range) => {
-      const isInRange = getIsInRange(from - 1, range);
-
-      if (isInRange)
-        return { ...range, length: range.length + addedText.length };
-
-      if (range.offset > from)
-        return { ...range, offset: range.offset + addedText.length };
-
-      return range;
-    });
+    const newRanges = this.updateRanges(selectedBlock, from, newBlockText);
 
     const newBlock = new RichBlock(newBlockText, newRanges);
 
@@ -113,23 +102,11 @@ export class Modifier {
         addedText +
         firstSelectedBlock.text.slice(to);
 
-      const newRanges = firstSelectedBlock.inlineStyleRanges.map((range) => {
-        const isInRange = getIsInRange(from - 1, range);
-
-        if (isInRange)
-          return {
-            ...range,
-            length: range.length + addedText.length - replacedText.length,
-          };
-
-        if (range.offset > from)
-          return {
-            ...range,
-            offset: range.offset + addedText.length - replacedText.length,
-          };
-
-        return range;
-      });
+      const newRanges = this.updateRanges(
+        firstSelectedBlock,
+        from,
+        newBlockText
+      );
 
       const newBlock = new RichBlock(newBlockText, newRanges);
 
@@ -171,22 +148,123 @@ export class Modifier {
         );
 
         const newBlockText = blockText.slice(0, currentFrom) + newText;
+        const newBlockRanges = this.updateRanges(
+          block,
+          currentFrom,
+          newBlockText
+        );
 
         replacedTextLength += newText.length;
         currentFrom += newText.length;
 
-        return new RichBlock(newBlockText, block.inlineStyleRanges);
+        return new RichBlock(newBlockText, newBlockRanges);
       }
 
       const newText = addedText.slice(replacedTextLength);
       const newBlockText = newText + blockText.slice(newText.length);
+      const newBlockRanges = this.updateRanges(
+        block,
+        currentFrom,
+        newBlockText
+      );
 
       replacedTextLength += newText.length;
       currentFrom += newText.length;
 
-      return new RichBlock(newBlockText, block.inlineStyleRanges);
+      return new RichBlock(newBlockText, newBlockRanges);
     });
 
     return new EditorState(newBlocks, editorState.selection);
+  }
+
+  public static insertBlock(
+    editorState: EditorState,
+    mutability: BlockMutabilityType,
+    initialStyle?: Style
+  ): EditorState {
+    const { selection, blocks } = editorState;
+
+    const text = editorState.getText();
+    let newBlock = RichBlock.createEmpty(mutability, initialStyle);
+
+    let newBlocks = [...blocks];
+
+    if (selection.collapsed && text.length === 0) {
+      newBlocks = [newBlock];
+    }
+
+    if (selection.collapsed && text.length === selection.from) {
+      newBlocks = [...blocks, newBlock];
+    }
+
+    if (selection.collapsed && text.length > selection.from) {
+      const firstBlock = editorState.getFirstSelectedBlock();
+
+      if (!firstBlock) {
+        return editorState;
+      }
+
+      const newBlockText = firstBlock.text.slice(
+        selection.from - 1,
+        selection.from
+      );
+      const firstBlockText = firstBlock.text.slice(0, selection.from - 1);
+      const secondBlockText = firstBlock.text.slice(selection.from - 1);
+
+      newBlock = RichBlock.createFromText(
+        newBlockText,
+        mutability,
+        initialStyle ? [initialStyle] : undefined
+      );
+
+      const firstBlockRanges = this.updateRanges(
+        firstBlock,
+        selection.from,
+        firstBlockText
+      );
+
+      const secondBlockRanges = this.updateRanges(
+        firstBlock,
+        selection.from,
+        secondBlockText
+      );
+
+      const newFirstBlock = new RichBlock(firstBlockText, firstBlockRanges);
+      const newSecondBlock = new RichBlock(secondBlockText, secondBlockRanges);
+
+      newBlocks = [
+        ...blocks.slice(0, blocks.indexOf(firstBlock)),
+        newFirstBlock,
+        newBlock,
+        newSecondBlock,
+        ...blocks.slice(blocks.indexOf(firstBlock) + 1),
+      ];
+    }
+
+    return new EditorState(newBlocks, editorState.selection);
+  }
+
+  private static updateRanges(block: RichBlock, from: number, newText: string) {
+    const newRanges = block.inlineStyleRanges.map((range) => {
+      const isInRange = getIsInRange(from - 1, range);
+
+      const lengthDifference = newText.length - block.text.length;
+
+      if (isInRange)
+        return {
+          ...range,
+          length: range.length + lengthDifference,
+        };
+
+      if (range.offset > from)
+        return {
+          ...range,
+          offset: range.offset + lengthDifference,
+        };
+
+      return range;
+    });
+
+    return newRanges;
   }
 }

@@ -1,6 +1,7 @@
 import React, { useCallback } from "react";
 import { RichEditorProps } from "./types";
 import {
+  Button,
   NativeSyntheticEvent,
   Text,
   TextInput,
@@ -11,52 +12,71 @@ import {
 import { styles } from "./styles";
 import { Selection } from "../../models/Selection";
 import { Modifier } from "../../models/Modifier";
-import { InlineStyleRange } from "../../models/InlineStyle";
+import { InlineStyle, InlineStyleRange } from "../../models/InlineStyle";
 import { EditorState } from "../../models/EditorState";
+import { BlockMutability } from "../../models/Block";
 
 const RichEditor: React.FC<RichEditorProps> = (props) => {
   const { value, onChange } = props;
 
-  const handleInputChange = (
-    e: NativeSyntheticEvent<TextInputChangeEventData>
-  ) => {
-    const { text } = e.nativeEvent;
+  const valueRef = React.useRef(value);
 
-    const actualText = value.getText();
-    const { collapsed } = value.selection;
+  const handleChange = useCallback(
+    (newState: EditorState) => {
+      valueRef.current = newState;
+      onChange(newState);
+    },
+    [onChange]
+  );
 
-    if (text.length === 0) {
-      return onChange(EditorState.createEmpty());
-    }
+  const handleInputChange = useCallback(
+    (e: NativeSyntheticEvent<TextInputChangeEventData>) => {
+      const { text } = e.nativeEvent;
 
-    if (text.length < actualText.length && collapsed) {
-      return onChange(EditorState.createFromText(text, []));
-    }
+      const actualText = valueRef.current.getText();
+      const { collapsed } = valueRef.current.selection;
 
-    if (text.length > actualText.length && collapsed) {
-      const newState = Modifier.insertText(value, e.nativeEvent.text);
+      if (text.length === 0) {
+        return handleChange(EditorState.createEmpty());
+      }
 
-      return onChange(newState);
-    }
+      if (text.length < actualText.length && collapsed) {
+        return handleChange(EditorState.createFromText(text, []));
+      }
 
-    if (!collapsed) {
-      const newState = Modifier.replaceText(value, e.nativeEvent.text);
+      if (text.length > actualText.length && collapsed) {
+        const newState = Modifier.insertText(
+          valueRef.current,
+          e.nativeEvent.text
+        );
 
-      return onChange(newState);
-    }
-  };
+        return handleChange(newState);
+      }
 
-  const handleSelectionChange = (
-    e: NativeSyntheticEvent<TextInputSelectionChangeEventData>
-  ) => {
-    const { selection } = e.nativeEvent;
+      if (!collapsed) {
+        const newState = Modifier.replaceText(
+          valueRef.current,
+          e.nativeEvent.text
+        );
 
-    const newSelection = new Selection(selection.start, selection.end);
+        return handleChange(newState);
+      }
+    },
+    [handleChange]
+  );
 
-    const newState = Modifier.updateSelection(value, newSelection);
+  const handleSelectionChange = useCallback(
+    (e: NativeSyntheticEvent<TextInputSelectionChangeEventData>) => {
+      const { selection } = e.nativeEvent;
 
-    onChange(newState);
-  };
+      const newSelection = new Selection(selection.start, selection.end);
+
+      const newState = Modifier.updateSelection(valueRef.current, newSelection);
+
+      handleChange(newState);
+    },
+    [handleChange]
+  );
 
   const getTextChildren = useCallback(
     (text: string, ranges: InlineStyleRange[]) => {
@@ -65,10 +85,22 @@ const RichEditor: React.FC<RichEditorProps> = (props) => {
     []
   );
 
+  const handleAddBlock = () => {
+    const newState = Modifier.insertBlock(
+      valueRef.current,
+      BlockMutability.MUTABLE,
+      InlineStyle.BOLD
+    );
+
+    handleChange(newState);
+  };
+
   console.log(value);
 
   return (
     <View style={styles.container}>
+      <Button title='Add block' onPress={handleAddBlock} />
+
       <TextInput
         multiline
         autoCorrect={false}
